@@ -1,0 +1,175 @@
+
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  CLIENT
+  CLEANER
+}
+
+enum BookingStatus {
+  PENDING
+  APPROVED
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  REQUIRES_CORRECTIVE_WORK
+  CANCELLED
+  REJECTED
+}
+
+enum OvertimeStatus {
+  SUBMITTED
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+enum ChecklistStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  RESOLVING
+  RESOLVED
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  passwordHash  String
+  role          Role
+  phone         String?
+  createdAt     DateTime @default(now())
+
+  properties           Property[]
+  bookings             BookingRequest[]
+  assignments          Assignment[]
+  overtime             OvertimeRequest[]
+  notifications        Notification[]
+  checklistSubmissions ChecklistSubmission[]
+  incidentReports      IncidentReport[]
+}
+
+model Property {
+  id                  String   @id @default(cuid())
+  name                String
+  address             String
+  postcode            String
+  specialRequirements String?
+  accessInstructions  String?
+  clientId            String
+  createdAt           DateTime @default(now())
+
+  client   User            @relation(fields: [clientId], references: [id])
+  bookings BookingRequest[]
+}
+
+model BookingRequest {
+  id              String        @id @default(cuid())
+  clientId        String
+  propertyId      String
+  serviceType     String
+  preferredDate   DateTime
+  preferredWindow String
+  frequency       String
+  instructions    String?
+  status          BookingStatus @default(PENDING)
+  createdAt       DateTime      @default(now())
+  notes           String?
+
+  client      User                  @relation(fields: [clientId], references: [id])
+  property    Property              @relation(fields: [propertyId], references: [id])
+  assignments Assignment[]
+  overtime    OvertimeRequest[]
+  checklists  ChecklistSubmission[]
+  incidents   IncidentReport[]
+}
+
+model Assignment {
+  id        String   @id @default(cuid())
+  bookingId String
+  cleanerId String
+  status    String
+  notes     String?
+  createdAt DateTime @default(now())
+
+  booking BookingRequest @relation(fields: [bookingId], references: [id])
+  cleaner User           @relation(fields: [cleanerId], references: [id])
+}
+
+model OvertimeRequest {
+  id               String         @id @default(cuid())
+  cleanerId        String
+  bookingId        String?
+  date             DateTime
+  additionalMinutes Int
+  reason           String
+  description      String
+  status           OvertimeStatus @default(SUBMITTED)
+  submittedAt      DateTime      @default(now())
+  decision         String?
+  approvedAt       DateTime?
+
+  cleaner User           @relation(fields: [cleanerId], references: [id])
+  booking BookingRequest? @relation(fields: [bookingId], references: [id])
+}
+
+model ChecklistSubmission {
+  id            String          @id @default(cuid())
+  cleanerId     String
+  bookingId     String?
+  jobCompleted  Boolean
+  notes         String?
+  photosUploaded Int           @default(0)
+  submittedAt   DateTime      @default(now())
+  status        ChecklistStatus @default(SUBMITTED)
+
+  cleaner User           @relation(fields: [cleanerId], references: [id])
+  booking BookingRequest? @relation(fields: [bookingId], references: [id])
+}
+
+model IncidentReport {
+  id          String          @id @default(cuid())
+  cleanerId   String
+  bookingId   String?
+  severity    IncidentSeverity
+  title       String
+  description String
+  raisedAt    DateTime        @default(now())
+  status      IncidentStatus  @default(OPEN)
+
+  cleaner User           @relation(fields: [cleanerId], references: [id])
+  booking BookingRequest? @relation(fields: [bookingId], references: [id])
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  message     String
+  destination String
+  createdAt   DateTime @default(now())
+  read        Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id])
+}

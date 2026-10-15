@@ -1,36 +1,72 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MF SPARKLING & SHINE LTD
 
-## Getting Started
+A professional cleaning-company operations platform built with Next.js, TypeScript, Prisma, and Tailwind CSS.
 
-First, run the development server:
+## Stack
+
+- Next.js App Router
+- TypeScript
+- Prisma + MySQL
+- JWT-based cookie session auth
+- Zod validation
+- Tailwind CSS
+- Vitest for validation tests
+
+## Local development
+
+1. Copy `.env.example` to `.env`.
+2. Set the MySQL connection string in `.env`.
+   ```bash
+   DATABASE_URL="mysql://USER:PASSWORD@localhost:3306/mf_sparkling_shine"
+   SESSION_SECRET="replace-with-strong-random-secret"
+   ```
+3. Install dependencies:
+   ```bash
+   npm install
+   ```
+4. Generate the Prisma client:
+   ```bash
+   npm run prisma:generate
+   ```
+5. Sync the Prisma schema with the development database:
+   ```bash
+   npm run prisma:push
+   ```
+6. Run the app:
+   ```bash
+   npm run dev
+   ```
+
+Open http://localhost:3000.
+
+The app adds demo data on its first database read only when the MySQL database has no users. It does not seed or overwrite an existing database that already has users.
+
+## Demo users
+
+- Admin: admin@mfcleaning.co.uk / Welcome123!
+- Client: client@mfcleaning.co.uk / Welcome123!
+- Cleaner: cleaner@mfcleaning.co.uk / Welcome123!
+
+These are demo credentials; replace them and the sample data before using the app with real users.
+
+For production, create and review migrations in development, then apply them with `npx prisma migrate deploy`.
+
+## Business workflow covered
+
+- Client property registration and booking requests
+- Admin approval and assignment flows
+- Cleaner workspace and overtime submission
+- Booking dashboard, role-based access and notifications
+- Prisma schema for MySQL deployment
+
+## Production notes
+
+- Use a managed MySQL service for production.
+- Set `SESSION_SECRET` to a long secure value before deployment.
+- Keep the app behind a proper production environment with HTTPS.
+
+## Testing
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm test
 ```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
