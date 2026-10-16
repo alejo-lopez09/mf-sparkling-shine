@@ -59,7 +59,8 @@ export async function getSessionUserId() {
 export async function getCurrentUser() {
   const userId = await getSessionUserId();
   if (!userId) return null;
-  return findUserById(userId);
+  const user = await findUserById(userId);
+  return user?.active ? user : null;
 }
 
 export async function requireUser() {

@@ -30,6 +30,7 @@ const initialUsers: User[] = [
     passwordHash: "",
     role: "ADMIN",
     phone: "+44 20 7946 0111",
+    active: true,
     createdAt: "2026-01-01T09:00:00.000Z",
   },
   {
@@ -39,6 +40,7 @@ const initialUsers: User[] = [
     passwordHash: "",
     role: "CLIENT",
     phone: "+44 7740 123456",
+    active: true,
     createdAt: "2026-01-10T09:00:00.000Z",
   },
   {
@@ -48,6 +50,7 @@ const initialUsers: User[] = [
     passwordHash: "",
     role: "CLEANER",
     phone: "+44 7700 987654",
+    active: true,
     createdAt: "2026-01-20T09:00:00.000Z",
   },
 ];
@@ -283,6 +286,7 @@ export async function readStore(): Promise<AppData> {
         passwordHash: String(user.passwordHash),
         role: String(user.role) as User["role"],
         phone: typeof user.phone === "string" ? user.phone : undefined,
+        active: user.active !== false,
         createdAt: new Date(String(user.createdAt)).toISOString(),
       })),
       properties: properties.map((property: Record<string, unknown>) => ({
@@ -387,7 +391,7 @@ export async function readStore(): Promise<AppData> {
   const data = JSON.parse(raw) as Partial<AppData>;
   return {
     ...data,
-    users: data.users ?? [],
+    users: (data.users ?? []).map((user) => ({ ...user, active: user.active ?? true })),
     properties: data.properties ?? [],
     bookings: data.bookings ?? [],
     assignments: (data.assignments ?? []).map((assignment) => ({ ...assignment })),
@@ -414,6 +418,7 @@ export async function writeStore(data: AppData) {
             passwordHash: user.passwordHash,
             role: toEnumRole(user.role),
             phone: user.phone,
+            active: user.active,
           },
           create: {
             id: user.id,
@@ -422,6 +427,7 @@ export async function writeStore(data: AppData) {
             passwordHash: user.passwordHash,
             role: toEnumRole(user.role),
             phone: user.phone,
+            active: user.active,
             createdAt: new Date(user.createdAt),
           },
         });
@@ -644,6 +650,39 @@ export async function getAllUsers() {
   return data.users;
 }
 
+export async function setStaffAccountActive(userId: string, active: boolean, administratorId: string) {
+  const data = await readStore();
+  const member = data.users.find((user) => user.id === userId);
+  if (!member || member.role === "CLIENT") return { error: "Staff account not found." };
+  if (!active && member.id === administratorId) return { error: "You cannot deactivate your own administrator account." };
+  if (!active && member.role === "ADMIN" && data.users.filter((user) => user.role === "ADMIN" && user.active).length <= 1) {
+    return { error: "The last active administrator cannot be deactivated." };
+  }
+  if (!active && member.role === "CLEANER") {
+    const hasActiveBookings = data.assignments.some((assignment) => {
+      if (assignment.cleanerId !== member.id || assignment.status === "CANCELLED") return false;
+      const booking = data.bookings.find((item) => item.id === assignment.bookingId);
+      return booking && ["PENDING", "APPROVED", "ASSIGNED", "IN_PROGRESS"].includes(booking.status);
+    });
+    if (hasActiveBookings) return { error: "Reassign this cleaner's active services before deactivating the account." };
+  }
+
+  member.active = active;
+  await writeStore(data);
+  return { member };
+}
+
+export async function updateStaffProfile(input: { userId: string; name: string; phone?: string }) {
+  const data = await readStore();
+  const member = data.users.find((user) => user.id === input.userId && user.role !== "CLIENT");
+  if (!member) return { error: "Staff account not found." };
+
+  member.name = input.name.trim();
+  member.phone = input.phone?.trim() ?? "";
+  await writeStore(data);
+  return { member };
+}
+
 export async function getPropertiesForUser(userId: string) {
   const data = await readStore();
   return data.properties.filter((property) => property.clientId === userId);
@@ -737,6 +776,7 @@ async function createAccount(input: {
     email: input.email,
     passwordHash: await hashPassword(input.password),
     role: input.role,
+    active: true,
     createdAt: new Date().toISOString(),
   };
 
@@ -751,7 +791,7 @@ export async function loginWithCredentials(email: string, password: string) {
 
   const { verifyPassword } = await import("@/lib/auth");
   const valid = await verifyPassword(password, user.passwordHash);
-  return valid ? user : null;
+  return valid && user.active ? user : null;
 }
 
 export async function createProperty(input: {
@@ -870,7 +910,7 @@ export async function createAssignment(input: { bookingId: string; cleanerId: st
   const booking = data.bookings.find((item) => item.id === input.bookingId);
   if (!booking) throw new Error("Booking not found.");
   if (!["PENDING", "APPROVED", "ASSIGNED"].includes(booking.status)) throw new Error("This service can no longer be assigned.");
-  if (!data.users.some((user) => user.id === input.cleanerId && user.role === "CLEANER")) throw new Error("Select a valid cleaner.");
+  if (!data.users.some((user) => user.id === input.cleanerId && user.role === "CLEANER" && user.active)) throw new Error("Select an active cleaner.");
   if (data.assignments.some((item) => item.bookingId === input.bookingId && item.checkedInAt)) {
     throw new Error("A service cannot be reassigned after the cleaner checks in.");
   }
@@ -1146,10 +1186,11 @@ export async function createIncidentReport(input: {
   return incident;
 }
 
-export async function markNotificationRead(notificationId: string) {
+export async function markNotificationRead(notificationId: string, userId: string) {
   const data = await readStore();
-  const notification = data.notifications.find((item) => item.id === notificationId);
+  const notification = data.notifications.find((item) => item.id === notificationId && item.userId === userId);
   if (!notification) return null;
+  if (notification.read) return notification;
   notification.read = true;
   await writeStore(data);
   return notification;
@@ -1159,26 +1200,41 @@ export async function getDashboardSummary(user: User) {
   const data = await readStore();
   const userBookings = data.bookings.filter((booking) => booking.clientId === user.id);
   const cleanerAssignments = data.assignments.filter((assignment) => assignment.cleanerId === user.id && assignment.status !== "CANCELLED");
+  const cleanerBookingIds = new Set(cleanerAssignments.map((assignment) => assignment.bookingId));
+  const visibleBookings = user.role === "ADMIN"
+    ? data.bookings
+    : user.role === "CLIENT"
+      ? userBookings
+      : data.bookings.filter((booking) => cleanerBookingIds.has(booking.id));
+  const visibleProperties = user.role === "ADMIN"
+    ? data.properties
+    : user.role === "CLIENT"
+      ? data.properties.filter((property) => property.clientId === user.id)
+      : data.properties.filter((property) => visibleBookings.some((booking) => booking.propertyId === property.id));
+  const todayInUK = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
 
   const metrics = {
     bookingsByStatus: {
-      PENDING: data.bookings.filter((b) => b.status === "PENDING").length,
-      APPROVED: data.bookings.filter((b) => b.status === "APPROVED").length,
-      COMPLETED: data.bookings.filter((b) => b.status === "COMPLETED").length,
-      REJECTED: data.bookings.filter((b) => b.status === "REJECTED").length,
+      PENDING: visibleBookings.filter((b) => b.status === "PENDING").length,
+      APPROVED: visibleBookings.filter((b) => b.status === "APPROVED").length,
+      COMPLETED: visibleBookings.filter((b) => b.status === "COMPLETED").length,
+      REJECTED: visibleBookings.filter((b) => b.status === "REJECTED").length,
     },
-    totalProperties: data.properties.length,
-    upcoming: userBookings.length,
+    totalProperties: visibleProperties.length,
+    upcoming: visibleBookings.filter((booking) => booking.preferredDate >= todayInUK
+      && ["PENDING", "APPROVED", "ASSIGNED", "IN_PROGRESS"].includes(booking.status)).length,
     assignments: cleanerAssignments.length,
     notifications: data.notifications.filter((n) => n.userId === user.id && !n.read).length,
-    openIncidents: data.incidentReports.filter((item) => item.status !== "RESOLVED").length,
-    checklistPendingReview: data.checklistSubmissions.filter((item) => item.status === "SUBMITTED").length,
+    openIncidents: data.incidentReports.filter((item) => item.status !== "RESOLVED"
+      && (user.role === "ADMIN" || item.cleanerId === user.id)).length,
+    checklistPendingReview: data.checklistSubmissions.filter((item) => item.status === "SUBMITTED"
+      && (user.role === "ADMIN" || item.cleanerId === user.id)).length,
   };
 
   return {
-    properties: data.properties,
-    bookings: user.role === "CLIENT" ? userBookings : data.bookings,
-    assignments: user.role === "CLEANER" ? cleanerAssignments : data.assignments,
+    properties: visibleProperties,
+    bookings: visibleBookings,
+    assignments: user.role === "ADMIN" ? data.assignments : user.role === "CLEANER" ? cleanerAssignments : [],
     overtimeRequests: data.overtimeRequests.filter((item) => user.role === "ADMIN" || item.cleanerId === user.id),
     notifications: data.notifications.filter((n) => n.userId === user.id),
     checklistSubmissions: data.checklistSubmissions.filter((item) => user.role === "ADMIN" || item.cleanerId === user.id),

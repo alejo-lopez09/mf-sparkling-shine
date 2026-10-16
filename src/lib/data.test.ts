@@ -10,12 +10,16 @@ import {
   createServiceReview,
   createOvertimeRequest,
   ensureSeedData,
+  getDashboardSummary,
   loginWithCredentials,
+  markNotificationRead,
   registerUser,
   reviewChecklistSubmission,
+  setStaffAccountActive,
   updateAssignmentAttendance,
   updateBookingStatus,
   updateOvertimeStatus,
+  updateStaffProfile,
 } from "./data";
 import { registerSchema } from "./validators";
 
@@ -47,6 +51,82 @@ describe("MF Sparkling & Shine data layer", () => {
     });
 
     expect(cleaner.role).toBe("CLEANER");
+  });
+
+  it("allows administrators to deactivate and reactivate staff without locking out the last administrator", async () => {
+    const cleaner = await createStaffAccount({
+      name: "Temporary Cleaner",
+      email: `temporary-cleaner-${Date.now()}@demo.co.uk`,
+      password: "StrongPass123!",
+      role: "CLEANER",
+    });
+
+    const deactivated = await setStaffAccountActive(cleaner.id, false, "u-admin");
+    expect(deactivated.member?.active).toBe(false);
+    expect(await loginWithCredentials(cleaner.email, "StrongPass123!")).toBeNull();
+    await expect(createAssignment({ bookingId: "b-001", cleanerId: cleaner.id })).rejects.toThrow("Select an active cleaner.");
+
+    const reactivated = await setStaffAccountActive(cleaner.id, true, "u-admin");
+    expect(reactivated.member?.active).toBe(true);
+    expect(await loginWithCredentials(cleaner.email, "StrongPass123!")).not.toBeNull();
+
+    expect((await setStaffAccountActive("u-admin", false, "u-admin")).error).toContain("own administrator");
+    expect((await setStaffAccountActive("u-admin", false, "another-admin")).error).toContain("last active administrator");
+  });
+
+  it("allows administrators to update staff names and contact numbers without changing login identities", async () => {
+    const cleaner = await createStaffAccount({
+      name: "Before Edit",
+      email: `profile-edit-${Date.now()}@demo.co.uk`,
+      password: "StrongPass123!",
+      role: "CLEANER",
+    });
+
+    const result = await updateStaffProfile({ userId: cleaner.id, name: "After Edit", phone: "+44 7700 000000" });
+    expect(result.member?.name).toBe("After Edit");
+    expect(result.member?.phone).toBe("+44 7700 000000");
+    expect(await loginWithCredentials(cleaner.email, "StrongPass123!")).not.toBeNull();
+    expect((await updateStaffProfile({ userId: "missing-user", name: "Unknown Person" })).error).toContain("not found");
+  });
+
+  it("keeps dashboard data within each user's role and notification ownership", async () => {
+    const outsideClient = await registerUser({
+      name: "Another Client",
+      email: `another-client-${Date.now()}@demo.co.uk`,
+      password: "StrongPass123!",
+    });
+    const outsideProperty = await createProperty({
+      clientId: outsideClient.id,
+      name: "Private Home",
+      address: "1 Private Road, London",
+      postcode: "N1 1AA",
+    });
+    const outsideBooking = await createBooking({
+      clientId: outsideClient.id,
+      propertyId: outsideProperty.id,
+      serviceType: "DOMESTIC",
+      preferredDate: "2026-11-05",
+      preferredWindow: "09:00-11:00",
+      frequency: "ONE_OFF",
+      instructions: "",
+    });
+
+    const clientSummary = await getDashboardSummary(outsideClient);
+    const demoUsers = (await ensureSeedData()).users;
+    const demoCleaner = demoUsers.find((user) => user.id === "u-cleaner");
+    const demoAdmin = demoUsers.find((user) => user.id === "u-admin");
+    if (!demoCleaner || !demoAdmin) throw new Error("Seeded dashboard test accounts are missing.");
+    const cleanerSummary = await getDashboardSummary(demoCleaner);
+    const adminSummary = await getDashboardSummary(demoAdmin);
+    expect(clientSummary.bookings.map((booking) => booking.id)).toEqual([outsideBooking.id]);
+    expect(clientSummary.properties.map((property) => property.id)).toEqual([outsideProperty.id]);
+    expect(clientSummary.assignments).toEqual([]);
+    expect(cleanerSummary.bookings.some((booking) => booking.id === outsideBooking.id)).toBe(false);
+    expect(cleanerSummary.properties.some((property) => property.id === outsideProperty.id)).toBe(false);
+    expect(adminSummary.bookings.some((booking) => booking.id === outsideBooking.id)).toBe(true);
+
+    expect(await markNotificationRead("n-001", outsideClient.id)).toBeNull();
+    expect((await markNotificationRead("n-001", "u-admin"))?.read).toBe(true);
   });
 
   it("accepts the demo admin credentials and keeps the booking flow valid", async () => {

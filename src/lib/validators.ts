@@ -18,6 +18,12 @@ export const staffAccountSchema = z.object({
   role: z.enum(["ADMIN", "CLEANER"]),
 });
 
+export const staffProfileSchema = z.object({
+  userId: z.string().min(1, "Select a staff account."),
+  name: z.string().trim().min(2, "Name must be at least 2 characters.").max(100),
+  phone: z.string().trim().max(30, "Phone number must be 30 characters or fewer.").optional().or(z.literal("")),
+});
+
 export const bookingSchema = z.object({
   propertyId: z.string().min(1, "Select a property."),
   serviceType: z.enum(["DOMESTIC", "DEEP", "OFFICE", "MOVE_IN"]),

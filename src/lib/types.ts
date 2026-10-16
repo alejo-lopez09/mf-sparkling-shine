@@ -7,6 +7,7 @@ export type User = {
   passwordHash: string;
   role: Role;
   phone?: string;
+  active: boolean;
   createdAt: string;
 };
 

@@ -22,12 +22,15 @@ import {
   loginWithCredentials,
   registerUser,
   reviewChecklistSubmission,
+  markNotificationRead,
+  setStaffAccountActive,
+  updateStaffProfile,
   updateAssignmentAttendance,
   updateBookingStatus,
   updateOvertimeStatus,
 } from "@/lib/data";
 import { setSession, clearSession, requireRole, requireUser } from "@/lib/session";
-import { assignmentActionSchema, bookingSchema, checklistSchema, incidentSchema, overtimeSchema, propertySchema, registerSchema, serviceMessageSchema, serviceReviewSchema, signInSchema, staffAccountSchema } from "@/lib/validators";
+import { assignmentActionSchema, bookingSchema, checklistSchema, incidentSchema, overtimeSchema, propertySchema, registerSchema, serviceMessageSchema, serviceReviewSchema, signInSchema, staffAccountSchema, staffProfileSchema } from "@/lib/validators";
 
 export async function signInAction(formData: FormData) {
   const email = String(formData.get("email") ?? "");
@@ -83,6 +86,51 @@ export async function createStaffAccountAction(formData: FormData) {
   await createStaffAccount(parsed.data);
   revalidatePath("/admin");
   redirect(`/admin?success=${encodeURIComponent("Staff account created.")}`);
+}
+
+export async function setStaffAccountActiveAction(formData: FormData) {
+  const administrator = await requireRole("ADMIN");
+  const userId = String(formData.get("userId") ?? "");
+  const activeValue = String(formData.get("active") ?? "");
+  if (!userId || (activeValue !== "true" && activeValue !== "false")) {
+    redirect(`/admin?error=${encodeURIComponent("Choose a valid staff account status.")}`);
+  }
+
+  const result = await setStaffAccountActive(userId, activeValue === "true", administrator.id);
+  if (result.error) redirect(`/admin?error=${encodeURIComponent(result.error)}`);
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+  revalidatePath("/cleaner");
+  redirect(`/admin?success=${encodeURIComponent(`Staff account ${activeValue === "true" ? "activated" : "deactivated"}.`)}`);
+}
+
+export async function updateStaffProfileAction(formData: FormData) {
+  await requireRole("ADMIN");
+  const parsed = staffProfileSchema.safeParse({
+    userId: formData.get("userId"),
+    name: formData.get("name"),
+    phone: formData.get("phone") ?? "",
+  });
+  if (!parsed.success) {
+    redirect(`/admin?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Please review the staff details.")}`);
+  }
+
+  const result = await updateStaffProfile(parsed.data);
+  if (result.error) redirect(`/admin?error=${encodeURIComponent(result.error)}`);
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+  redirect(`/admin?success=${encodeURIComponent("Staff details updated.")}`);
+}
+
+export async function markNotificationReadAction(formData: FormData) {
+  const user = await requireUser();
+  const notificationId = String(formData.get("notificationId") ?? "");
+  if (!notificationId) redirect("/dashboard");
+
+  const notification = await markNotificationRead(notificationId, user.id);
+  if (!notification) redirect(`/dashboard?error=${encodeURIComponent("Notification not found.")}`);
+  revalidatePath("/dashboard");
+  redirect("/dashboard");
 }
 
 export async function logoutAction() {

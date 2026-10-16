@@ -61,6 +61,8 @@ For production, create and review migrations in development, then apply them wit
 - Client ratings after approved completion
 - Overtime requests linked to assigned services and administrator approval
 - Administrator CSV export with date, client, cleaner and address filters, recorded hours and approved overtime details
+- Role-specific dashboards, private service data, and in-app notifications that users can mark as read
+- Administrator controls to deactivate/reactivate staff accounts while protecting the last admin and active cleaner assignments
 
 ## Production notes
 
@@ -70,7 +72,7 @@ For production, create and review migrations in development, then apply them wit
 - Keep the app behind a proper production environment with HTTPS.
 - Uploaded service photos are stored outside the public web root in `data/evidence` by default. On deployment, set `EVIDENCE_DIR` to durable private storage with backups and access restricted to the app; local/serverless instance storage is not a production backup strategy.
 - The JSON file store is for local development only. Configure MySQL for a multi-user deployment; the production app refuses to start without `DATABASE_URL`.
-- The beta currently records recurring frequency as a booking preference; it does not automatically generate future repeat bookings. Payments, payroll/tax invoices, messaging integrations, editing/deactivating accounts, cleaner availability profiles and advanced contracts remain outside this delivery.
+- The beta records recurring frequency as a booking preference; it does not automatically generate future repeat bookings, and the booking form explains that clients must submit each visit separately. Administrators can edit staff names and phone numbers and deactivate/reactivate staff accounts; login email and password changes are not supported in the beta. Payments, payroll/tax invoices, messaging integrations, cleaner availability profiles and advanced contracts also remain outside this delivery.
 
 ## Testing
 

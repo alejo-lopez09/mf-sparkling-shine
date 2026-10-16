@@ -46,13 +46,14 @@ export default async function NewBookingPage({
           </div>
 
           <div>
-            <label htmlFor="frequency" className="mb-1 block text-sm font-medium text-slate-700">Frequency</label>
+            <label htmlFor="frequency" className="mb-1 block text-sm font-medium text-slate-700">Preferred frequency</label>
             <select id="frequency" name="frequency" defaultValue="ONE_OFF" className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-emerald-500">
               <option value="ONE_OFF">One-off</option>
               <option value="WEEKLY">Weekly</option>
               <option value="FORTNIGHTLY">Fortnightly</option>
               <option value="MONTHLY">Monthly</option>
             </select>
+            <p className="mt-1 text-xs text-slate-500">This records your preference only; future visits are not scheduled automatically. Submit a new request for each visit until recurring bookings are available.</p>
           </div>
 
           <div>

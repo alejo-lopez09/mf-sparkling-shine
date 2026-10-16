@@ -9,6 +9,8 @@ import {
   createStaffAccountAction,
   reviewChecklistAction,
   sendServiceMessageAction,
+  setStaffAccountActiveAction,
+  updateStaffProfileAction,
 } from "@/app/actions";
 import { AppShell } from "@/components/app-shell";
 import { getAllUsers, getBookingsForAdmin, getDashboardSummary } from "@/lib/data";
@@ -23,7 +25,8 @@ export default async function AdminPage({
   const [summary, bookings, users, params] = await Promise.all([getDashboardSummary(user), getBookingsForAdmin(), getAllUsers(), searchParams]);
   const error = Array.isArray(params.error) ? params.error[0] : params.error;
   const success = Array.isArray(params.success) ? params.success[0] : params.success;
-  const cleaners = users.filter((member) => member.role === "CLEANER");
+  const cleaners = users.filter((member) => member.role === "CLEANER" && member.active);
+  const reportCleaners = users.filter((member) => member.role === "CLEANER");
   const userNames = new Map(users.map((member) => [member.id, member.name]));
   const properties = new Map(summary.properties.map((property) => [property.id, property]));
   const bookingMap = new Map(bookings.map((booking) => [booking.id, booking]));
@@ -61,7 +64,7 @@ export default async function AdminPage({
           <div><label htmlFor="report-from" className="mb-1 block text-xs font-medium text-slate-700">From</label><input id="report-from" name="from" type="date" className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm" /></div>
           <div><label htmlFor="report-to" className="mb-1 block text-xs font-medium text-slate-700">To</label><input id="report-to" name="to" type="date" className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm" /></div>
           <div><label htmlFor="report-client" className="mb-1 block text-xs font-medium text-slate-700">Client</label><select id="report-client" name="clientId" defaultValue="" className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"><option value="">All clients</option>{users.filter((member) => member.role === "CLIENT").map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></div>
-          <div><label htmlFor="report-cleaner" className="mb-1 block text-xs font-medium text-slate-700">Cleaner</label><select id="report-cleaner" name="cleanerId" defaultValue="" className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"><option value="">All cleaners</option>{cleaners.map((cleaner) => <option key={cleaner.id} value={cleaner.id}>{cleaner.name}</option>)}</select></div>
+          <div><label htmlFor="report-cleaner" className="mb-1 block text-xs font-medium text-slate-700">Cleaner</label><select id="report-cleaner" name="cleanerId" defaultValue="" className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm"><option value="">All cleaners</option>{reportCleaners.map((cleaner) => <option key={cleaner.id} value={cleaner.id}>{cleaner.name}</option>)}</select></div>
           <div><label htmlFor="report-address" className="mb-1 block text-xs font-medium text-slate-700">Address contains</label><input id="report-address" name="address" type="search" className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm" /></div>
           <button className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500 sm:col-span-2 xl:col-span-5">Download filtered report</button>
         </form>
@@ -230,7 +233,7 @@ export default async function AdminPage({
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="text-lg font-semibold text-slate-900">Team</h2><p className="text-sm text-slate-500">Create cleaner and administrator accounts for project staff.</p></div>
+          <div><h2 className="text-lg font-semibold text-slate-900">Team</h2><p className="text-sm text-slate-500">Create staff accounts and control access. Reassign active services before deactivating a cleaner.</p></div>
           <details className="w-full rounded-xl border border-slate-200 bg-slate-50 p-4 sm:max-w-xl">
             <summary className="cursor-pointer text-sm font-semibold text-slate-800">Add staff account</summary>
             <form action={createStaffAccountAction} className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -242,11 +245,35 @@ export default async function AdminPage({
             </form>
           </details>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {users.map((member) => (
-            <div key={member.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {users.filter((member) => member.role !== "CLIENT").map((member) => (
+            <div key={member.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
               <div className="font-medium text-slate-800">{member.name}</div>
-              <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">{member.role}</div>
+              <div className="text-xs text-slate-600">{member.email}</div>
+              {member.phone ? <div className="text-xs text-slate-600">{member.phone}</div> : null}
+              <div className="mt-1 text-[11px] uppercase tracking-[0.22em] text-slate-500">{member.role} · {member.active ? "Active" : "Inactive"}</div>
+              <details className="mt-3">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-700">Edit name or phone</summary>
+                <form action={updateStaffProfileAction} className="mt-2 space-y-2">
+                  <input type="hidden" name="userId" value={member.id} />
+                  <div>
+                    <label htmlFor={`staff-edit-name-${member.id}`} className="mb-1 block text-xs font-medium text-slate-700">Full name</label>
+                    <input id={`staff-edit-name-${member.id}`} name="name" defaultValue={member.name} required minLength={2} maxLength={100} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label htmlFor={`staff-edit-phone-${member.id}`} className="mb-1 block text-xs font-medium text-slate-700">Phone</label>
+                    <input id={`staff-edit-phone-${member.id}`} name="phone" type="tel" defaultValue={member.phone ?? ""} maxLength={30} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
+                  </div>
+                  <button className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-700">Save details</button>
+                </form>
+              </details>
+              <form action={setStaffAccountActiveAction} className="mt-3">
+                <input type="hidden" name="userId" value={member.id} />
+                <input type="hidden" name="active" value={String(!member.active)} />
+                <button className={`rounded-lg px-3 py-2 text-xs font-semibold ${member.active ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50" : "bg-emerald-600 text-white hover:bg-emerald-500"}`}>
+                  {member.active ? "Deactivate account" : "Reactivate account"}
+                </button>
+              </form>
             </div>
           ))}
         </div>
