@@ -2,12 +2,13 @@ import Link from "next/link";
 
 import { signInAction } from "@/app/actions";
 
-export default function LoginPage({
+export default async function LoginPage({
   searchParams,
 }: {
-  searchParams?: { error?: string };
+  searchParams: Promise<{ error?: string | string[] }>;
 }) {
-  const error = searchParams?.error;
+  const params = await searchParams;
+  const error = Array.isArray(params.error) ? params.error[0] : params.error;
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-12">

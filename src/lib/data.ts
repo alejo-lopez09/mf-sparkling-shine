@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { hashPassword } from "@/lib/auth";
 import { ensurePrismaClient, isDatabaseConfigured } from "@/lib/prisma";
@@ -12,10 +13,14 @@ import type {
   Notification,
   OvertimeRequest,
   Property,
+  ServiceMessage,
+  ServiceReview,
   User,
 } from "@/lib/types";
 
-const appDataPath = path.join(process.cwd(), "data", "app-data.json");
+const appDataPath = process.env.APP_DATA_FILE
+  ? path.resolve(process.env.APP_DATA_FILE)
+  : path.join(process.cwd(), "data", "app-data.json");
 
 const initialUsers: User[] = [
   {
@@ -89,11 +94,11 @@ const initialBookings: BookingRequest[] = [
     clientId: "u-client",
     propertyId: "p-002",
     serviceType: "OFFICE",
-    preferredDate: "2026-10-18",
+    preferredDate: "2026-10-15",
     preferredWindow: "18:00-20:00",
     frequency: "MONTHLY",
     instructions: "Quiet clean after closing. Please do not disturb the finance team.",
-    status: "APPROVED",
+    status: "IN_PROGRESS",
     createdAt: "2026-10-13T10:00:00.000Z",
     notes: "Commercial office support.",
   },
@@ -108,6 +113,16 @@ const initialAssignments: Assignment[] = [
     notes: "Assigned after admin confirmation.",
     createdAt: "2026-10-15T10:00:00.000Z",
   },
+  {
+    id: "a-002",
+    bookingId: "b-002",
+    cleanerId: "u-cleaner",
+    status: "CONFIRMED",
+    notes: "Office shift assignment.",
+    createdAt: "2026-10-15T16:00:00.000Z",
+    checkedInAt: "2026-10-15T18:00:00.000Z",
+    checkedOutAt: "2026-10-15T20:00:00.000Z",
+  },
 ];
 
 const initialOvertime: OvertimeRequest[] = [
@@ -115,12 +130,12 @@ const initialOvertime: OvertimeRequest[] = [
     id: "o-001",
     cleanerId: "u-cleaner",
     bookingId: "b-002",
-    date: "2026-10-18",
+    date: "2026-10-15",
     additionalMinutes: 45,
     reason: "Extra time needed to finish the reception area.",
     description: "The client requested a deeper polish of the reception glass frontage and lobby floor.",
     status: "PENDING_APPROVAL",
-    submittedAt: "2026-10-18T20:15:00.000Z",
+    submittedAt: "2026-10-15T20:15:00.000Z",
   },
 ];
 
@@ -153,7 +168,8 @@ const initialChecklistSubmissions: ChecklistSubmission[] = [
     jobCompleted: true,
     notes: "All standard areas completed. Lobby floor polished to requested finish.",
     photosUploaded: 2,
-    submittedAt: "2026-10-18T20:45:00.000Z",
+    evidenceFiles: [],
+    submittedAt: "2026-10-15T20:45:00.000Z",
     status: "SUBMITTED",
   },
 ];
@@ -166,7 +182,7 @@ const initialIncidentReports: IncidentReport[] = [
     severity: "MEDIUM",
     title: "Reception glass streaking",
     description: "Visible streaks remained on front-facing glass after final polish.",
-    raisedAt: "2026-10-18T20:55:00.000Z",
+    raisedAt: "2026-10-15T20:55:00.000Z",
     status: "OPEN",
   },
 ];
@@ -204,6 +220,8 @@ async function createSeedData(): Promise<AppData> {
     notifications: initialNotifications,
     checklistSubmissions: initialChecklistSubmissions,
     incidentReports: initialIncidentReports,
+    serviceMessages: [],
+    serviceReviews: [],
   };
 }
 
@@ -244,7 +262,7 @@ export async function readStore(): Promise<AppData> {
       return ensureSeedData();
     }
 
-    const [users, properties, bookings, assignments, overtimeRequests, notifications, checklistSubmissions, incidentReports] = await Promise.all([
+    const [users, properties, bookings, assignments, overtimeRequests, notifications, checklistSubmissions, incidentReports, serviceMessages, serviceReviews] = await Promise.all([
       prisma.user.findMany({ orderBy: { createdAt: "desc" } }),
       prisma.property.findMany({ orderBy: { createdAt: "desc" } }),
       prisma.bookingRequest.findMany({ orderBy: { createdAt: "desc" } }),
@@ -253,6 +271,8 @@ export async function readStore(): Promise<AppData> {
       prisma.notification.findMany({ orderBy: { createdAt: "desc" } }),
       prisma.checklistSubmission.findMany({ orderBy: { submittedAt: "desc" } }),
       prisma.incidentReport.findMany({ orderBy: { raisedAt: "desc" } }),
+      prisma.serviceMessage.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.serviceReview.findMany({ orderBy: { createdAt: "desc" } }),
     ]);
 
     return {
@@ -295,6 +315,8 @@ export async function readStore(): Promise<AppData> {
         status: String(assignment.status) as Assignment["status"],
         notes: typeof assignment.notes === "string" ? assignment.notes : "",
         createdAt: new Date(String(assignment.createdAt)).toISOString(),
+        checkedInAt: assignment.checkedInAt ? new Date(String(assignment.checkedInAt)).toISOString() : undefined,
+        checkedOutAt: assignment.checkedOutAt ? new Date(String(assignment.checkedOutAt)).toISOString() : undefined,
       })),
       overtimeRequests: overtimeRequests.map((overtime: Record<string, unknown>) => ({
         id: String(overtime.id),
@@ -325,6 +347,7 @@ export async function readStore(): Promise<AppData> {
         jobCompleted: Boolean(checklist.jobCompleted),
         notes: typeof checklist.notes === "string" ? checklist.notes : "",
         photosUploaded: Number(checklist.photosUploaded),
+        evidenceFiles: Array.isArray(checklist.evidenceFiles) ? checklist.evidenceFiles.filter((item): item is string => typeof item === "string") : [],
         submittedAt: new Date(String(checklist.submittedAt)).toISOString(),
         status: String(checklist.status) as ChecklistSubmission["status"],
       })),
@@ -338,12 +361,46 @@ export async function readStore(): Promise<AppData> {
         raisedAt: new Date(String(incident.raisedAt)).toISOString(),
         status: String(incident.status) as IncidentReport["status"],
       })),
+      serviceMessages: serviceMessages.map((message: Record<string, unknown>) => ({
+        id: String(message.id),
+        bookingId: String(message.bookingId),
+        senderId: String(message.senderId),
+        body: String(message.body),
+        createdAt: new Date(String(message.createdAt)).toISOString(),
+      })),
+      serviceReviews: serviceReviews.map((review: Record<string, unknown>) => ({
+        id: String(review.id),
+        bookingId: String(review.bookingId),
+        clientId: String(review.clientId),
+        cleanerId: String(review.cleanerId),
+        quality: Number(review.quality),
+        punctuality: Number(review.punctuality),
+        communication: Number(review.communication),
+        comment: String(review.comment),
+        createdAt: new Date(String(review.createdAt)).toISOString(),
+      })),
     };
   }
 
   await ensureSeedData();
   const raw = await fs.readFile(appDataPath, "utf8");
-  return JSON.parse(raw) as AppData;
+  const data = JSON.parse(raw) as Partial<AppData>;
+  return {
+    ...data,
+    users: data.users ?? [],
+    properties: data.properties ?? [],
+    bookings: data.bookings ?? [],
+    assignments: (data.assignments ?? []).map((assignment) => ({ ...assignment })),
+    overtimeRequests: data.overtimeRequests ?? [],
+    notifications: data.notifications ?? [],
+    checklistSubmissions: (data.checklistSubmissions ?? []).map((checklist) => ({
+      ...checklist,
+      evidenceFiles: checklist.evidenceFiles ?? [],
+    })),
+    incidentReports: data.incidentReports ?? [],
+    serviceMessages: data.serviceMessages ?? [],
+    serviceReviews: data.serviceReviews ?? [],
+  };
 }
 
 export async function writeStore(data: AppData) {
@@ -429,6 +486,8 @@ export async function writeStore(data: AppData) {
             cleanerId: assignment.cleanerId,
             status: assignment.status,
             notes: assignment.notes,
+            checkedInAt: assignment.checkedInAt ? new Date(assignment.checkedInAt) : null,
+            checkedOutAt: assignment.checkedOutAt ? new Date(assignment.checkedOutAt) : null,
           },
           create: {
             id: assignment.id,
@@ -436,6 +495,8 @@ export async function writeStore(data: AppData) {
             cleanerId: assignment.cleanerId,
             status: assignment.status,
             notes: assignment.notes,
+            checkedInAt: assignment.checkedInAt ? new Date(assignment.checkedInAt) : null,
+            checkedOutAt: assignment.checkedOutAt ? new Date(assignment.checkedOutAt) : null,
             createdAt: new Date(assignment.createdAt),
           },
         });
@@ -499,6 +560,7 @@ export async function writeStore(data: AppData) {
             jobCompleted: checklist.jobCompleted,
             notes: checklist.notes,
             photosUploaded: checklist.photosUploaded,
+            evidenceFiles: checklist.evidenceFiles ?? [],
             status: checklist.status,
           },
           create: {
@@ -508,11 +570,34 @@ export async function writeStore(data: AppData) {
             jobCompleted: checklist.jobCompleted,
             notes: checklist.notes,
             photosUploaded: checklist.photosUploaded,
+            evidenceFiles: checklist.evidenceFiles ?? [],
             submittedAt: new Date(checklist.submittedAt),
             status: checklist.status,
           },
         });
       }));
+    await Promise.all(data.serviceMessages.map(async (message: ServiceMessage) => {
+      await prisma.serviceMessage.upsert({
+        where: { id: message.id },
+        update: { bookingId: message.bookingId, senderId: message.senderId, body: message.body },
+        create: { ...message, createdAt: new Date(message.createdAt) },
+      });
+    }));
+    await Promise.all(data.serviceReviews.map(async (review: ServiceReview) => {
+      await prisma.serviceReview.upsert({
+        where: { id: review.id },
+        update: {
+          bookingId: review.bookingId,
+          clientId: review.clientId,
+          cleanerId: review.cleanerId,
+          quality: review.quality,
+          punctuality: review.punctuality,
+          communication: review.communication,
+          comment: review.comment,
+        },
+        create: { ...review, createdAt: new Date(review.createdAt) },
+      });
+    }));
     await Promise.all(data.incidentReports.map(async (incident: IncidentReport) => {
         await prisma.incidentReport.upsert({
           where: { id: incident.id },
@@ -576,10 +661,64 @@ export async function getBookingsForAdmin() {
 
 export async function getAssignmentsForCleaner(cleanerId: string) {
   const data = await readStore();
-  return data.assignments.filter((assignment) => assignment.cleanerId === cleanerId);
+  return data.assignments.filter((assignment) => assignment.cleanerId === cleanerId && assignment.status !== "CANCELLED");
+}
+
+export async function updateAssignmentAttendance(
+  bookingId: string,
+  cleanerId: string,
+  action: "CHECK_IN" | "CHECK_OUT",
+) {
+  const data = await readStore();
+  const assignment = data.assignments.find((item) => item.bookingId === bookingId && item.cleanerId === cleanerId && item.status !== "CANCELLED");
+  if (!assignment) throw new Error("You are not assigned to this service.");
+
+  const now = new Date().toISOString();
+  if (action === "CHECK_IN") {
+    const booking = data.bookings.find((item) => item.id === bookingId);
+    if (!booking) throw new Error("Booking not found.");
+    if (booking.status !== "ASSIGNED") throw new Error("The administrator must assign this service before check-in.");
+    if (assignment.checkedInAt || assignment.checkedOutAt) throw new Error("This service has already been started or completed.");
+    assignment.checkedInAt = now;
+    booking.status = "IN_PROGRESS";
+  } else {
+    if (!assignment.checkedInAt) throw new Error("Check in before checking out.");
+    if (assignment.checkedOutAt) throw new Error("This service has already been checked out.");
+    assignment.checkedOutAt = now;
+  }
+
+  await writeStore(data);
+  return assignment;
+}
+
+export async function getEvidenceAccess(filename: string, user: User) {
+  const data = await readStore();
+  const checklist = data.checklistSubmissions.find((item) => item.evidenceFiles.includes(filename));
+  if (!checklist?.bookingId) return false;
+  const booking = data.bookings.find((item) => item.id === checklist.bookingId);
+  if (!booking) return false;
+  if (user.role === "ADMIN" || (user.role === "CLIENT" && booking.clientId === user.id)) return true;
+  return user.role === "CLEANER" && checklist.cleanerId === user.id;
 }
 
 export async function registerUser(input: {
+  name: string;
+  email: string;
+  password: string;
+}) {
+  return createAccount({ ...input, role: "CLIENT" });
+}
+
+export async function createStaffAccount(input: {
+  name: string;
+  email: string;
+  password: string;
+  role: "ADMIN" | "CLEANER";
+}) {
+  return createAccount(input);
+}
+
+async function createAccount(input: {
   name: string;
   email: string;
   password: string;
@@ -593,7 +732,7 @@ export async function registerUser(input: {
   }
 
   const user: User = {
-    id: `u-${Date.now()}`,
+    id: `u-${randomUUID()}`,
     name: input.name,
     email: input.email,
     passwordHash: await hashPassword(input.password),
@@ -662,6 +801,8 @@ export async function createBooking(input: {
   notes?: string;
 }) {
   const data = await readStore();
+  const property = data.properties.find((item) => item.id === input.propertyId && item.clientId === input.clientId);
+  if (!property) throw new Error("Select one of your registered properties.");
 
   const booking: BookingRequest = {
     id: `b-${Date.now()}`,
@@ -696,14 +837,44 @@ export async function updateBookingStatus(bookingId: string, status: BookingRequ
   const data = await readStore();
   const booking = data.bookings.find((item) => item.id === bookingId);
   if (!booking) throw new Error("Booking not found.");
+  if (status === "ASSIGNED" && !data.assignments.some((item) => item.bookingId === booking.id)) {
+    throw new Error("Assign a cleaner before confirming the service.");
+  }
+  if ((status === "APPROVED" || status === "REJECTED") && booking.status !== "PENDING") {
+    throw new Error("Only pending bookings can be approved or rejected.");
+  }
 
   booking.status = status;
+  if (status === "REJECTED" || status === "CANCELLED") {
+    for (const assignment of data.assignments.filter((item) => item.bookingId === bookingId)) {
+      assignment.status = "CANCELLED";
+    }
+  }
+  if (status !== "PENDING") {
+    data.notifications.unshift({
+      id: `n-${randomUUID()}`,
+      userId: booking.clientId,
+      title: status === "REJECTED" ? "Booking request declined" : "Booking status updated",
+      message: `Your ${booking.serviceType.toLowerCase()} cleaning request is now ${status.replace(/_/g, " ").toLowerCase()}.`,
+      destination: "/client",
+      createdAt: new Date().toISOString(),
+      read: false,
+    });
+  }
   await writeStore(data);
   return booking;
 }
 
 export async function createAssignment(input: { bookingId: string; cleanerId: string; notes?: string }) {
   const data = await readStore();
+  const booking = data.bookings.find((item) => item.id === input.bookingId);
+  if (!booking) throw new Error("Booking not found.");
+  if (!["PENDING", "APPROVED", "ASSIGNED"].includes(booking.status)) throw new Error("This service can no longer be assigned.");
+  if (!data.users.some((user) => user.id === input.cleanerId && user.role === "CLEANER")) throw new Error("Select a valid cleaner.");
+  if (data.assignments.some((item) => item.bookingId === input.bookingId && item.checkedInAt)) {
+    throw new Error("A service cannot be reassigned after the cleaner checks in.");
+  }
+  data.assignments = data.assignments.filter((item) => item.bookingId !== input.bookingId);
   const assignment: Assignment = {
     id: `a-${Date.now()}`,
     bookingId: input.bookingId,
@@ -723,6 +894,15 @@ export async function createAssignment(input: { bookingId: string; cleanerId: st
     createdAt: new Date().toISOString(),
     read: false,
   });
+  data.notifications.unshift({
+    id: `n-${randomUUID()}`,
+    userId: booking.clientId,
+    title: "Cleaner assigned",
+    message: "A cleaner has been assigned to your service.",
+    destination: "/client",
+    createdAt: new Date().toISOString(),
+    read: false,
+  });
 
   await writeStore(data);
   return assignment;
@@ -730,13 +910,20 @@ export async function createAssignment(input: { bookingId: string; cleanerId: st
 
 export async function createOvertimeRequest(input: {
   cleanerId: string;
-  bookingId?: string;
+  bookingId: string;
   date: string;
   additionalMinutes: number;
   reason: string;
   description: string;
 }) {
   const data = await readStore();
+  if (!data.assignments.some((item) => item.bookingId === input.bookingId && item.cleanerId === input.cleanerId && item.status !== "CANCELLED")) {
+    throw new Error("Overtime must relate to one of your assigned services.");
+  }
+  const booking = data.bookings.find((item) => item.id === input.bookingId);
+  if (booking?.status === "CANCELLED" || booking?.status === "REJECTED") {
+    throw new Error("Overtime cannot be recorded for a cancelled service.");
+  }
   const overtime: OvertimeRequest = {
     id: `o-${Date.now()}`,
     cleanerId: input.cleanerId,
@@ -768,29 +955,39 @@ export async function updateOvertimeStatus(overtimeId: string, status: OvertimeR
   const data = await readStore();
   const overtime = data.overtimeRequests.find((item) => item.id === overtimeId);
   if (!overtime) throw new Error("Overtime record not found.");
+  if (overtime.status !== "SUBMITTED" && overtime.status !== "PENDING_APPROVAL") {
+    throw new Error("This overtime request has already been reviewed.");
+  }
 
   overtime.status = status;
   overtime.decision = decision ?? "Reviewed by administrator";
-  overtime.approvedAt = new Date().toISOString();
+  overtime.approvedAt = status === "APPROVED" ? new Date().toISOString() : undefined;
   await writeStore(data);
   return overtime;
 }
 
 export async function createChecklistSubmission(input: {
   cleanerId: string;
-  bookingId?: string;
+  bookingId: string;
   jobCompleted: boolean;
   notes: string;
-  photosUploaded: number;
+  evidenceFiles: string[];
 }) {
   const data = await readStore();
+  const assignment = data.assignments.find((item) => item.bookingId === input.bookingId && item.cleanerId === input.cleanerId && item.status !== "CANCELLED");
+  if (!assignment) throw new Error("You are not assigned to this service.");
+  if (!assignment.checkedOutAt) throw new Error("Check out of the service before submitting its checklist.");
+  if (data.checklistSubmissions.some((item) => item.bookingId === input.bookingId && item.cleanerId === input.cleanerId && item.status !== "REJECTED")) {
+    throw new Error("A checklist for this service is already awaiting review or has been approved.");
+  }
   const submission: ChecklistSubmission = {
     id: `c-${Date.now()}`,
     cleanerId: input.cleanerId,
     bookingId: input.bookingId,
     jobCompleted: input.jobCompleted,
     notes: input.notes,
-    photosUploaded: input.photosUploaded,
+    photosUploaded: input.evidenceFiles.length,
+    evidenceFiles: input.evidenceFiles,
     submittedAt: new Date().toISOString(),
     status: "SUBMITTED",
   };
@@ -810,14 +1007,119 @@ export async function createChecklistSubmission(input: {
   return submission;
 }
 
+export async function reviewChecklistSubmission(
+  checklistId: string,
+  decision: "APPROVED" | "REJECTED",
+) {
+  const data = await readStore();
+  const submission = data.checklistSubmissions.find((item) => item.id === checklistId);
+  if (!submission?.bookingId) throw new Error("Checklist submission not found.");
+  if (submission.status !== "SUBMITTED") throw new Error("This checklist has already been reviewed.");
+  if (decision === "APPROVED" && !submission.jobCompleted) {
+    throw new Error("A checklist marked incomplete cannot be approved as completed work.");
+  }
+  const booking = data.bookings.find((item) => item.id === submission.bookingId);
+  if (!booking) throw new Error("Booking not found.");
+  if (!data.assignments.some((item) => item.bookingId === booking.id && item.cleanerId === submission.cleanerId && item.checkedOutAt)) {
+    throw new Error("The assigned cleaner must check out before the submitted work can be reviewed.");
+  }
+  submission.status = decision;
+  booking.status = decision === "APPROVED" && submission.jobCompleted ? "COMPLETED" : "REQUIRES_CORRECTIVE_WORK";
+  data.notifications.unshift({
+    id: `n-${randomUUID()}`,
+    userId: booking.clientId,
+    title: decision === "APPROVED" && submission.jobCompleted ? "Service completed" : "Service needs follow-up",
+    message: decision === "APPROVED" && submission.jobCompleted
+      ? "Your cleaning service has been reviewed and completed. You can now leave a rating."
+      : "The cleaning service requires follow-up. Please contact the administrator if you need more information.",
+    destination: "/client",
+    createdAt: new Date().toISOString(),
+    read: false,
+  });
+  await writeStore(data);
+  return submission;
+}
+
+export async function createServiceMessage(input: { bookingId: string; senderId: string; body: string }) {
+  const data = await readStore();
+  const booking = data.bookings.find((item) => item.id === input.bookingId);
+  const sender = data.users.find((item) => item.id === input.senderId);
+  if (!booking || !sender) throw new Error("Service or sender not found.");
+  const assignedCleaner = data.assignments.some((item) => item.bookingId === booking.id && item.cleanerId === sender.id && item.status !== "CANCELLED");
+  if (sender.role !== "ADMIN" && sender.id !== booking.clientId && !assignedCleaner) {
+    throw new Error("You are not allowed to message this service.");
+  }
+  const message: ServiceMessage = {
+    id: `m-${randomUUID()}`,
+    bookingId: booking.id,
+    senderId: sender.id,
+    body: input.body,
+    createdAt: new Date().toISOString(),
+  };
+  data.serviceMessages.unshift(message);
+  const recipientIds = sender.role === "ADMIN"
+    ? [booking.clientId, ...data.assignments.filter((item) => item.bookingId === booking.id).map((item) => item.cleanerId)]
+    : [sender.id === booking.clientId
+      ? data.assignments.find((item) => item.bookingId === booking.id)?.cleanerId
+      : booking.clientId,
+    ...data.users.filter((item) => item.role === "ADMIN").map((item) => item.id)];
+  for (const recipientId of new Set(recipientIds.filter((id): id is string => Boolean(id) && id !== sender.id))) {
+    const recipientRole = data.users.find((item) => item.id === recipientId)?.role;
+    data.notifications.unshift({
+      id: `n-${randomUUID()}`,
+      userId: recipientId,
+      title: "New service message",
+      message: "A new message was added to a cleaning service.",
+      destination: recipientRole === "ADMIN" ? "/admin" : recipientRole === "CLEANER" ? "/cleaner" : "/client",
+      createdAt: message.createdAt,
+      read: false,
+    });
+  }
+  await writeStore(data);
+  return message;
+}
+
+export async function createServiceReview(input: {
+  bookingId: string;
+  clientId: string;
+  quality: number;
+  punctuality: number;
+  communication: number;
+  comment: string;
+}) {
+  const data = await readStore();
+  const booking = data.bookings.find((item) => item.id === input.bookingId && item.clientId === input.clientId);
+  if (!booking || booking.status !== "COMPLETED") throw new Error("Only completed services can be reviewed.");
+  if (data.serviceReviews.some((review) => review.bookingId === booking.id)) throw new Error("This service has already been reviewed.");
+  const assignment = data.assignments.find((item) => item.bookingId === booking.id);
+  if (!assignment) throw new Error("The service has no assigned cleaner.");
+  const review: ServiceReview = {
+    id: `r-${randomUUID()}`,
+    bookingId: booking.id,
+    clientId: input.clientId,
+    cleanerId: assignment.cleanerId,
+    quality: input.quality,
+    punctuality: input.punctuality,
+    communication: input.communication,
+    comment: input.comment,
+    createdAt: new Date().toISOString(),
+  };
+  data.serviceReviews.unshift(review);
+  await writeStore(data);
+  return review;
+}
+
 export async function createIncidentReport(input: {
   cleanerId: string;
-  bookingId?: string;
+  bookingId: string;
   severity: IncidentReport["severity"];
   title: string;
   description: string;
 }) {
   const data = await readStore();
+  if (!data.assignments.some((item) => item.bookingId === input.bookingId && item.cleanerId === input.cleanerId && item.status !== "CANCELLED")) {
+    throw new Error("Incidents must relate to one of your assigned services.");
+  }
   const incident: IncidentReport = {
     id: `i-${Date.now()}`,
     cleanerId: input.cleanerId,
@@ -856,7 +1158,7 @@ export async function markNotificationRead(notificationId: string) {
 export async function getDashboardSummary(user: User) {
   const data = await readStore();
   const userBookings = data.bookings.filter((booking) => booking.clientId === user.id);
-  const cleanerAssignments = data.assignments.filter((assignment) => assignment.cleanerId === user.id);
+  const cleanerAssignments = data.assignments.filter((assignment) => assignment.cleanerId === user.id && assignment.status !== "CANCELLED");
 
   const metrics = {
     bookingsByStatus: {
@@ -881,6 +1183,12 @@ export async function getDashboardSummary(user: User) {
     notifications: data.notifications.filter((n) => n.userId === user.id),
     checklistSubmissions: data.checklistSubmissions.filter((item) => user.role === "ADMIN" || item.cleanerId === user.id),
     incidentReports: data.incidentReports.filter((item) => user.role === "ADMIN" || item.cleanerId === user.id),
+    serviceMessages: data.serviceMessages.filter((item) => user.role === "ADMIN"
+      || (user.role === "CLIENT" && userBookings.some((booking) => booking.id === item.bookingId))
+      || (user.role === "CLEANER" && cleanerAssignments.some((assignment) => assignment.bookingId === item.bookingId))),
+    serviceReviews: data.serviceReviews.filter((item) => user.role === "ADMIN"
+      || (user.role === "CLIENT" && item.clientId === user.id)
+      || (user.role === "CLEANER" && item.cleanerId === user.id)),
     metrics,
   };
 }

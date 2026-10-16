@@ -7,20 +7,28 @@ import { AppShell } from "@/components/app-shell";
 import { getPropertiesForUser } from "@/lib/data";
 import { getCurrentUser } from "@/lib/session";
 
-export default async function NewBookingPage() {
+export default async function NewBookingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string | string[] }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.role !== "CLIENT") redirect("/dashboard");
 
-  const properties = await getPropertiesForUser(user.id);
+  const [properties, params] = await Promise.all([getPropertiesForUser(user.id), searchParams]);
+  const error = Array.isArray(params.error) ? params.error[0] : params.error;
 
   return (
     <AppShell user={user} title="Create a booking request" subtitle="Submit a service request with dates, window, property information and cleaning instructions.">
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {error ? <p role="alert" className="mb-5 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{error}</p> : null}
+        {properties.length === 0 ? <p className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Add a property before requesting a cleaning.</p> : null}
         <form action={createBookingAction} className="grid gap-5 md:grid-cols-2">
           <div className="md:col-span-2">
             <label htmlFor="propertyId" className="mb-1 block text-sm font-medium text-slate-700">Property</label>
-            <select id="propertyId" name="propertyId" className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-emerald-500" required>
+            <select id="propertyId" name="propertyId" defaultValue={properties[0]?.id ?? ""} className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-emerald-500" required>
+              <option value="" disabled>Select a property</option>
               {properties.map((property) => (
                 <option key={property.id} value={property.id}>{property.name}</option>
               ))}
@@ -49,7 +57,7 @@ export default async function NewBookingPage() {
 
           <div>
             <label htmlFor="preferredDate" className="mb-1 block text-sm font-medium text-slate-700">Preferred date</label>
-            <input id="preferredDate" name="preferredDate" type="date" className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-emerald-500" required />
+            <input id="preferredDate" name="preferredDate" type="date" min={new Date().toISOString().slice(0, 10)} className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-emerald-500" required />
           </div>
 
           <div>
@@ -68,12 +76,12 @@ export default async function NewBookingPage() {
           </div>
 
           <div className="md:col-span-2">
-            <label htmlFor="notes" className="mb-1 block text-sm font-medium text-slate-700">Admin notes</label>
+            <label htmlFor="notes" className="mb-1 block text-sm font-medium text-slate-700">Additional notes</label>
             <textarea id="notes" name="notes" rows={3} className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none transition focus:border-emerald-500" />
           </div>
 
           <div className="md:col-span-2">
-            <button type="submit" className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700">
+            <button type="submit" disabled={properties.length === 0} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50">
               Submit booking request
             </button>
           </div>

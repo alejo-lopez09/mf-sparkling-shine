@@ -4,19 +4,26 @@ import { redirect } from "next/navigation";
 
 import { findUserById } from "@/lib/data";
 
-const secret = new TextEncoder().encode(process.env.SESSION_SECRET ?? "dev-secret-change-me");
+function getSessionSecret() {
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (process.env.NODE_ENV === "production" && (!sessionSecret || sessionSecret.length < 32)) {
+    throw new Error("Set SESSION_SECRET to a value of at least 32 characters before running in production.");
+  }
+  return new TextEncoder().encode(sessionSecret ?? "dev-secret-change-me");
+}
 
 export async function createSessionToken(userId: string) {
   return new SignJWT({ userId })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("7d")
-    .sign(secret);
+    .sign(getSessionSecret());
 }
 
 export async function verifySessionToken(token: string | undefined) {
   if (!token) return null;
 
+  const secret = getSessionSecret();
   try {
     const { payload } = await jwtVerify(token, secret);
     if (typeof payload.userId !== "string") return null;

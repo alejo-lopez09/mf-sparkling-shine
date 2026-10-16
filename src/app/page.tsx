@@ -40,9 +40,9 @@ export default function HomePage() {
             </div>
             <div className="mt-10 grid gap-4 sm:grid-cols-3">
               {[
-                ["120+", "Properties managed"],
-                ["36", "Active cleaners"],
-                ["98%", "Client satisfaction"],
+                ["3", "User roles"],
+                ["Private", "Service messages"],
+                ["Tracked", "Work evidence"],
               ].map(([value, label]) => (
                 <div key={label} className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
                   <div className="text-2xl font-semibold text-slate-900">{value}</div>

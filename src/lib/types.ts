@@ -54,6 +54,8 @@ export type Assignment = {
   status: AssignmentStatus;
   notes: string;
   createdAt: string;
+  checkedInAt?: string;
+  checkedOutAt?: string;
 };
 
 export type OvertimeStatus = "SUBMITTED" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
@@ -89,8 +91,29 @@ export type ChecklistSubmission = {
   jobCompleted: boolean;
   notes: string;
   photosUploaded: number;
+  evidenceFiles: string[];
   submittedAt: string;
   status: "SUBMITTED" | "APPROVED" | "REJECTED";
+};
+
+export type ServiceMessage = {
+  id: string;
+  bookingId: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+};
+
+export type ServiceReview = {
+  id: string;
+  bookingId: string;
+  clientId: string;
+  cleanerId: string;
+  quality: number;
+  punctuality: number;
+  communication: number;
+  comment: string;
+  createdAt: string;
 };
 
 export type IncidentReport = {
@@ -113,4 +136,6 @@ export type AppData = {
   notifications: Notification[];
   checklistSubmissions: ChecklistSubmission[];
   incidentReports: IncidentReport[];
+  serviceMessages: ServiceMessage[];
+  serviceReviews: ServiceReview[];
 };

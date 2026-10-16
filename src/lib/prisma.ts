@@ -18,5 +18,8 @@ export async function ensurePrismaClient() {
 
 export function isDatabaseConfigured() {
   const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (process.env.NODE_ENV === "production" && (!databaseUrl || databaseUrl.includes("replace-with"))) {
+    throw new Error("Configure DATABASE_URL before running the application in production.");
+  }
   return Boolean(databaseUrl && !databaseUrl.includes("replace-with"));
 }

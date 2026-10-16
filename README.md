@@ -54,16 +54,23 @@ For production, create and review migrations in development, then apply them wit
 ## Business workflow covered
 
 - Client property registration and booking requests
-- Admin approval and assignment flows
-- Cleaner workspace and overtime submission
-- Booking dashboard, role-based access and notifications
-- Prisma schema for MySQL deployment
+- Admin booking review and selectable cleaner assignment
+- Cleaner check-in/check-out, service checklist and private photo evidence
+- Administrator evidence review, work approval and corrective-work status
+- Client/cleaner conversations linked to a booking, with administrator oversight
+- Client ratings after approved completion
+- Overtime requests linked to assigned services and administrator approval
+- Administrator CSV export with date, client, cleaner and address filters, recorded hours and approved overtime details
 
 ## Production notes
 
 - Use a managed MySQL service for production.
-- Set `SESSION_SECRET` to a long secure value before deployment.
+- Apply the current Prisma schema before starting the updated application (`npm run prisma:generate` and, for a new development database, `npm run prisma:push`). For production, create and review a database migration and apply it with `npx prisma migrate deploy`.
+- Set `SESSION_SECRET` to at least 32 random characters before deployment; production startup rejects a missing or short value.
 - Keep the app behind a proper production environment with HTTPS.
+- Uploaded service photos are stored outside the public web root in `data/evidence` by default. On deployment, set `EVIDENCE_DIR` to durable private storage with backups and access restricted to the app; local/serverless instance storage is not a production backup strategy.
+- The JSON file store is for local development only. Configure MySQL for a multi-user deployment; the production app refuses to start without `DATABASE_URL`.
+- The beta currently records recurring frequency as a booking preference; it does not automatically generate future repeat bookings. Payments, payroll/tax invoices, messaging integrations, editing/deactivating accounts, cleaner availability profiles and advanced contracts remain outside this delivery.
 
 ## Testing
 

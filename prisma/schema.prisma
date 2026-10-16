@@ -68,6 +68,9 @@ model User {
   notifications        Notification[]
   checklistSubmissions ChecklistSubmission[]
   incidentReports      IncidentReport[]
+  serviceMessagesSent  ServiceMessage[] @relation("MessageSender")
+  clientReviews        ServiceReview[]  @relation("ReviewClient")
+  cleanerReviews       ServiceReview[]  @relation("ReviewCleaner")
 }
 
 model Property {
@@ -103,6 +106,8 @@ model BookingRequest {
   overtime    OvertimeRequest[]
   checklists  ChecklistSubmission[]
   incidents   IncidentReport[]
+  messages    ServiceMessage[]
+  review      ServiceReview?
 }
 
 model Assignment {
@@ -112,6 +117,8 @@ model Assignment {
   status    String
   notes     String?
   createdAt DateTime @default(now())
+  checkedInAt DateTime?
+  checkedOutAt DateTime?
 
   booking BookingRequest @relation(fields: [bookingId], references: [id])
   cleaner User           @relation(fields: [cleanerId], references: [id])
@@ -141,6 +148,7 @@ model ChecklistSubmission {
   jobCompleted  Boolean
   notes         String?
   photosUploaded Int           @default(0)
+  evidenceFiles Json?
   submittedAt   DateTime      @default(now())
   status        ChecklistStatus @default(SUBMITTED)
 
@@ -172,4 +180,33 @@ model Notification {
   read        Boolean  @default(false)
 
   user User @relation(fields: [userId], references: [id])
+}
+
+model ServiceMessage {
+  id        String   @id @default(cuid())
+  bookingId String
+  senderId  String
+  body      String   @db.VarChar(2000)
+  createdAt DateTime @default(now())
+
+  booking BookingRequest @relation(fields: [bookingId], references: [id])
+  sender  User           @relation("MessageSender", fields: [senderId], references: [id])
+
+  @@index([bookingId, createdAt])
+}
+
+model ServiceReview {
+  id            String   @id @default(cuid())
+  bookingId     String   @unique
+  clientId      String
+  cleanerId     String
+  quality       Int
+  punctuality   Int
+  communication Int
+  comment       String   @db.VarChar(1000)
+  createdAt     DateTime @default(now())
+
+  booking BookingRequest @relation(fields: [bookingId], references: [id])
+  client  User           @relation("ReviewClient", fields: [clientId], references: [id])
+  cleaner User           @relation("ReviewCleaner", fields: [cleanerId], references: [id])
 }

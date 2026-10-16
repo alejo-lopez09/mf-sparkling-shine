@@ -6,23 +6,18 @@ import type { User } from "@/lib/types";
 
 const navGroups = {
   ADMIN: [
-    ["Overview", "/admin"],
-    ["Bookings", "/dashboard"],
-    ["Clients", "/dashboard"],
-    ["Cleaners", "/dashboard"],
-    ["Reports", "/dashboard"],
+    ["Operations", "/admin"],
+    ["Overview", "/dashboard"],
+    ["Reports", "/admin/report.csv"],
   ],
   CLIENT: [
     ["Dashboard", "/dashboard"],
-    ["Properties", "/client/new-property"],
+    ["Properties", "/client"],
     ["New booking", "/client/new-booking"],
-    ["History", "/dashboard"],
   ],
   CLEANER: [
     ["Dashboard", "/dashboard"],
-    ["Schedule", "/dashboard"],
-    ["Jobs", "/dashboard"],
-    ["Messages", "/dashboard"],
+    ["My services", "/cleaner"],
   ],
 } as const;
 
@@ -42,14 +37,14 @@ export function AppShell({
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className="border-b border-slate-200 bg-white/90 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-700">MF SPARKLING & SHINE LTD</div>
             <div className="text-sm text-slate-500">Cleaning operations</div>
           </div>
-          <nav className="hidden items-center gap-4 md:flex">
+          <nav className="order-3 flex w-full items-center gap-4 overflow-x-auto whitespace-nowrap md:order-none md:w-auto">
             {links.map(([label, href]) => (
-              <Link key={href} href={href} className={cn("text-sm font-medium text-slate-600 transition hover:text-slate-900", href === "/dashboard" && "text-slate-900")}>
+              <Link key={`${label}-${href}`} href={href} className={cn("text-sm font-medium text-slate-600 transition hover:text-slate-900", href === "/dashboard" && "text-slate-900")}>
                 {label}
               </Link>
             ))}
